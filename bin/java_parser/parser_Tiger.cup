@@ -1,0 +1,302 @@
+package java_parser;		/*	change to your own package name	*/
+import  java_lexer.*;
+import	ErrorMsg.*;
+import  Absyn.*;		/*	change to your own AbsynTree package name	*/
+import	Symbol.*;
+action code
+{:
+	static Symbol sym(String s) 
+	{
+		return Symbol.symbol(s);
+	}
+:}
+parser code
+{:
+	private	Lexer myLexer;
+  	ErrorMsg errorMsg;
+	public	Exp  myparser;
+  	public parser(Lexer myLexer,ErrorMsg err) 
+	{
+		super(myLexer);
+		this.myLexer = myLexer;
+		errorMsg=err;
+	}
+    public void syntax_error(java_cup.runtime.Symbol current) 
+	{
+	   	report_error("Syntax error (" + current.sym + ")",current);
+  	}	
+	public void report_error(String message, java_cup.runtime.Symbol tok) 
+	{
+    		errorMsg.error(tok.left, message);
+	}	
+:}
+scan with 
+{: 
+	java_cup.runtime.Symbol newSymbol;
+	newSymbol = myLexer.next_token();
+	return newSymbol;
+:}
+/*--------------------------------------------------------other non-terminals----------------------------------------------------------------------*/
+terminal	String ID, STRING;
+terminal	Integer INT;
+terminal	COMMA, COLON, SEMICOLON, LPAREN, RPAREN, 
+			LBRACK, RBRACK, LBRACE, RBRACE, DOT, PLUS, MINUS, 
+			TIMES, DIVIDE, EQ, NEQ, LT, LE, GT, GE, 
+			AND, OR, ASSIGN, ARRAY, IF, THEN, ELSE, 
+			WHILE, FOR, TO, DO, LET, IN, END, OF, 
+			BREAK, NIL, FUNCTION, VAR, TYPE, UMINUS;
+non terminal	Exp		program,expr;	
+non terminal    Var		lvalue;
+non terminal	ExpList		exprlistopt,exprseqopt;
+non terminal 	Dec 		declaration;
+non terminal 	DecList 	declarationlist;
+non terminal 	VarDec 		variabledeclaration;
+non terminal 	TypeDec 	typedeclaration,typedeclist;
+non terminal 	FunctionDec 	functiondeclaration,functiondeclist;
+non terminal 	Ty 		type;
+non terminal 	FieldExpList    fieldlistopt;
+non terminal 	FieldList 	typefields;
+
+/*-------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*	Precedences	*/
+precedence 	right 		FUNCTION, TYPE;
+precedence 	right 		OF;
+precedence 	right 		DO, ELSE, THEN;
+precedence	nonassoc	ASSIGN;
+precedence	left		OR;
+precedence	left		AND;
+precedence	nonassoc	EQ, NEQ, LT, LE, GT, GE;
+precedence	left		PLUS,MINUS;
+precedence	left		TIMES,DIVIDE;
+precedence	nonassoc	UMINUS;	
+precedence 	left 		LPAREN;   
+	
+/*-----------------------------------------------------------------------------------------------------------------------------------------------*/
+	start with program;
+
+	program	::= 	expr:e	{:	parser.myparser=(Exp)e;	:}
+;
+
+	expr	::=								
+			STRING : v1            /*	String Constant	*/
+			{:	RESULT = new StringExp(v1left,v1);	:}
+		|						
+			INT : v1    /*	Integer Constant	*/
+			{:	RESULT = new IntExp(v1left,v1);	:} 
+		|						
+			NIL : v1          /*	NIL Constant	*/
+			{:	RESULT = new NilExp(v1left);	:}
+		|
+			lvalue : l1       /*左值*/
+			{:	RESULT =new VarExp(l1left,l1);	:}
+		|
+			MINUS :m  expr : e1	  /*负数 比如-5*/
+			{:	RESULT = new OpExp(mleft,new IntExp(e1.pos,0),OpExp.MINUS,e1);	:}  %prec UMINUS
+			
+		|	
+			expr : e1	MINUS	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.MINUS,e2);	:}
+		|	
+			expr : e1	PLUS 	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.PLUS,e2);	:}
+		|	
+			expr : e1	TIMES 	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.MUL,e2);	:}
+		|	
+			expr : e1	DIVIDE 	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.DIV,e2);	:}
+		|	
+			expr : e1	AND 	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new IfExp(e1.pos,e1,e2,new IntExp(e1.pos,0));	:}
+		|	
+			expr : e1	OR	expr : e2       /*	Operation Plus	*/
+			{:	RESULT = new IfExp(e1.pos,e1,new IntExp(e1.pos,1),e2);	:}
+		|
+			expr :e1	EQ	expr : e2       /* 判断相等*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.EQ,e2);	:}
+		|	
+			expr :e1	NEQ	expr : e2        /*判断不等*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.NE,e2);	:}
+		|	
+			expr :e1	LT	expr : e2         /*判断小于*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.LT,e2);	:}
+		|	
+			expr :e1	LE	expr : e2        /*判断小于等于*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.LE,e2);	:}
+		|	
+			expr :e1	GT	expr : e2		/*判断大于*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.GT,e2);	:}
+		|	
+			expr :e1	GE	expr : e2		/*判断大于等于*/
+			{:	RESULT = new OpExp(e1.pos,e1,OpExp.GE,e2);	:}
+		|			
+/*------------------------------------------------------------------------------------------------------------------*/
+			lvalue : l1	ASSIGN	expr :e1       /*lvalue := expr，赋值语句*/
+			{:	RESULT = new AssignExp(l1left,l1,e1);		:}
+		|
+			ID : i LPAREN exprlistopt : el	RPAREN          /*id( expr-listopt )*/
+			{:	RESULT = new CallExp(ileft,Symbol.symbol(i),el);	:}
+		|
+			ID:i LPAREN RPAREN
+			{:	RESULT=new CallExp(ileft,Symbol.symbol(i),null);	:}
+
+		|
+			LPAREN:l	exprseqopt : eq	RPAREN         /*(a;b;c)*/
+			{:	RESULT = new SeqExp(lleft,eq);			:}
+		|	LPAREN:l	RPAREN                         /*()*/
+			{:	RESULT = new SeqExp(lleft,null);		:}
+		|
+			ID : i 	LBRACE 	fieldlistopt : fl	RBRACE        /*id{}*/
+              		{:	RESULT = new RecordExp(ileft,Symbol.symbol(i),fl);	:}
+		|
+			ID : i 	LBRACE 	RBRACE
+			{:	RESULT = new RecordExp(ileft,Symbol.symbol(i),null);:}     
+		|
+			ID : i  LBRACK expr:e1 RBRACK OF expr:e2          /*i[expr1] of expr2*/
+			{:	RESULT = new ArrayExp(ileft,Symbol.symbol(i),e1,e2);:}
+		|
+			IF : i 	expr:e1 THEN expr:e2 
+			{:	RESULT = new IfExp(ileft,e1,e2);	:}
+		|	IF : i 	expr:e1 THEN expr : e2 	ELSE expr : e3 
+			{:	RESULT = new IfExp(ileft,e1,e2,e3);	:}
+		|
+			WHILE : w expr:e1 DO expr : e2 
+			{:	RESULT = new WhileExp(wleft,e1,e2);:}
+		|	
+			FOR : f ID : i   ASSIGN expr:e1 TO expr:e2 DO expr:e3
+     			{:	RESULT=new ForExp(fleft,new VarDec(ileft,Symbol.symbol(i),new NameTy(ileft,Symbol.symbol("int")),e1),e2,e3);	:}
+		|	
+			BREAK : b 
+			{:	RESULT=new BreakExp(bleft);	:}
+		|	
+			LET : l 	declarationlist:dl IN END
+			{: 	RESULT = new LetExp(lleft, dl, null); :}  
+		|
+			LET : l 	declarationlist : dl 	IN exprseqopt:eq END
+			{: 	RESULT = new LetExp(lleft, dl,new SeqExp(eqleft,eq)); :}
+		;
+/*------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+lvalue::=
+		ID:i    /*简单变量*/
+		{:	RESULT=new SimpleVar(ileft,Symbol.symbol(i));	:} 
+	|
+		lvalue:l DOT ID:i  /* a.b */
+		{:	RESULT=new FieldVar(lleft,l,Symbol.symbol(i));	:}
+	|	
+		lvalue:l LBRACK expr:e RBRACK /* a.b[5]*/
+		{:	RESULT=new SubscriptVar(lleft,l,e);	:}
+	|   
+		|ID:i LBRACK expr:e RBRACK    /* a[5]*/
+		{:RESULT=new SubscriptVar(ileft,new SimpleVar(ileft,Symbol.symbol(i)),e);:}
+;
+
+/*用逗号分割的表达式列表,用于函数调用.例如:func(a,b,c)*/
+exprlistopt::=                /*a,b,c*/
+		expr:e 
+		{:	RESULT=new ExpList(e,null);	:}
+	|
+		expr:e COMMA exprlistopt:el 
+		{:	RESULT=new ExpList(e,el);	:}
+;
+/*用分号分割的表达式列表,例如 a=3;”abc”;b=a+1.常用于 let...in...end 表达式中*/
+exprseqopt::=
+		expr:e 
+		{:	RESULT=new ExpList(e,null);	 :}
+	|
+		expr:e SEMICOLON exprseqopt:eq 
+		{:	RESULT=new ExpList(e,eq);	 :}
+;
+/*域列表,用在域变量中.例如{name="abc", age=10}中的 list */
+fieldlistopt::=
+		ID:i EQ expr:e
+		{:RESULT=new FieldExpList(ileft,Symbol.symbol(i),e,null);:}
+	|
+		ID:i EQ expr:e COMMA fieldlistopt:flist
+		{:RESULT=new FieldExpList(ileft,Symbol.symbol(i),e,flist);:}
+;
+/* ----------------------------------------------------------------------------------------------- */
+declarationlist::=
+		declaration:dec 
+		{:RESULT=new DecList(dec,null);:}
+	|
+		declaration:dec declarationlist:declist
+		{:RESULT=new DecList(dec,declist);:}
+;
+/*------------------------------一个声明可以是三种类型:类型声明列表,变量声明或函数声明列表-------------------*/
+declaration::=
+		typedeclist:tdec       /*类型生命*/
+		{:RESULT=tdec;:}
+	|
+		variabledeclaration:vdec /*变量声明*/
+		{:RESULT=vdec;:}
+	|
+		functiondeclist:fdec   /*函数声明*/ 
+		{:RESULT=fdec;:}
+;
+/*------------------------------------------------------------------------------------------------*/
+/*----------------------------------类型声明列表----------------------------------------------------*/
+typedeclist::=
+		typedeclaration:t 
+		{:RESULT=t;:}
+	|
+		typedeclaration:t typedeclist:l
+		{:RESULT=new TypeDec(t.pos,t.name,t.ty,l);:}
+;
+typedeclaration ::=                     
+		TYPE:ty ID:i EQ type:t          /*比如type a = array of int*/
+		{:RESULT=new TypeDec(tyleft,Symbol.symbol(i),t,null); :}
+;
+/*类型:包括未知类型,域类型,空类型,数组类型*/
+type::=
+		ID:i           /*类型是简单类型 b*/
+		{:RESULT=new NameTy(ileft,Symbol.symbol(i));:}
+	|
+		LBRACE:l typefields:f RBRACE       /*结构体声明 {a:int,b:int}*/
+		{:RESULT=new RecordTy(lleft,f);:}
+	|
+		LBRACE:l RBRACE               /*结构体生命，内部为空 {}*/
+		{:RESULT=new RecordTy(lleft,null);:}
+	|
+		ARRAY:a OF ID:i                 /*声明Array类型的变量 array of int */  
+		{:RESULT=new ArrayTy(aleft,Symbol.symbol(i));:}
+;
+/*--------------------------typefileds, 用于域类型或函数的形式参数-------------------------------------------*/
+typefields::=
+		ID:i COLON ID:j
+		{:RESULT=new FieldList(ileft,Symbol.symbol(i),Symbol.symbol(j),null);:}
+	|	ID:i COLON ID:j COMMA typefields:tf
+		{:RESULT=new FieldList(ileft,Symbol.symbol(i),Symbol.symbol(j),tf);:}
+;
+/*------------------------------------------------------------------------------------------------------*/
+/*-------------------------变量声明,类型可选,例如:var a:int=5 或 var a=5 -----------------------------------*/
+variabledeclaration::=
+		VAR:v ID:i ASSIGN expr:e
+		{:RESULT=new VarDec(vleft,Symbol.symbol(i),null,e);:}
+	|
+		VAR:v ID:i COLON ID:j ASSIGN expr:e
+		{:RESULT=new VarDec(vleft,Symbol.symbol(i),new NameTy(ileft,Symbol.symbol(j)),e);:}
+;
+/*------------------------------------------------------------------------------------------------------*/
+/*------------------------------函数声明列表,是由多个函数声明组成的块------------------------------------------*/
+functiondeclist::=
+		functiondeclaration:f 
+		{:RESULT=f;:}
+	|
+		functiondeclaration:f functiondeclist :l
+		{:RESULT =new FunctionDec(f.pos, f.name, f.params ,f.result,f.body,l );:}
+;
+/*------------------------------------函数声明--------------------------------------------------------------------*/
+functiondeclaration::=
+		FUNCTION:f ID:i LPAREN RPAREN EQ expr:e       									 /*无参数无返回值*/
+		{:RESULT=new FunctionDec(fleft,Symbol.symbol(i),null,null,e,null);:}
+	|
+		FUNCTION:f ID:i LPAREN typefields:flist RPAREN EQ expr:e       					 /*有参数无返回值*/
+		{:RESULT=new FunctionDec(fleft,Symbol.symbol(i),flist,null,e,null); :}
+	|
+		FUNCTION:f ID:i LPAREN RPAREN COLON ID:j EQ expr:e        						 /*无参数有返回值*/
+		{:RESULT=new FunctionDec(fleft,Symbol.symbol(i), null, new NameTy(jleft,Symbol.symbol(j)), e, null); :}
+	|	FUNCTION:f ID:i LPAREN typefields:flist RPAREN COLON ID:j EQ expr:e        		 /*有参数有返回值*/
+		{:RESULT=new FunctionDec(fleft,Symbol.symbol(i),flist,new NameTy(jleft,Symbol.symbol(j)),e,null);:}
+;
+/*----------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+ 
